@@ -1,23 +1,22 @@
 import { Component, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { TextboxComponent } from './textbox/textbox.component';
 import { TranslateButtonComponent } from './translate-button/translate-button.component';
-import { SwitchComponent } from './switch/switch.component';
 import { TexboxOutputComponent } from './texbox-output/texbox-output.component';
 import { RamdropComponent } from './ramdrop/ramdrop.component';
 import { SaveRamButtonComponent } from './save-ram-button/save-ram-button.component';
+import { InstructionTableComponent } from './instruction-table/instruction-table.component';
 import { TranslatorService } from '../Shared/Services/Translator/translator.service';
 import { FormInputManagerService } from '../Shared/Services/FormInputManager/form-input-manager.service';
-import { InstructionTableComponent } from './instruction-table/instruction-table.component';
 import { TableInstructionService } from '../Shared/Services/tableInstruction/table-instruction.service';
-
 
 @Component({
   selector: 'app-main-page',
   standalone: true,
   imports: [
+    CommonModule,
     TextboxComponent,
     TranslateButtonComponent,
-    SwitchComponent,
     TexboxOutputComponent,
     RamdropComponent,
     SaveRamButtonComponent,
@@ -27,61 +26,78 @@ import { TableInstructionService } from '../Shared/Services/tableInstruction/tab
   styleUrls: ['./main-page.component.css'], 
 })
 export class MainPageComponent {
-  
+  parameter: string = '';
   inputText: string = '';
   output: string = '';
-  parameter:string = '';
+  isHexToMIPS: boolean = false;
+  tableManager = inject(TableInstructionService);
   private translator = inject(TranslatorService);
   private inputManager = inject(FormInputManagerService).inputApp;
   private inputManagerIsHexToMips = inject(FormInputManagerService).isHexToMips;
-  isHexToMIPS: boolean = false;
-  tableManager = inject(TableInstructionService);
+
+  controlStack: { original: string, translated: string, type: 'MIPS' | 'HEX' }[] = [];
+  selectedInstruction: string = ''; 
 
   onTableValueChange(value: string): void {
-    this.tableManager.updateSelectedLineText(value);
+    console.log('isHexToMips:', this.isHexToMIPS);
+    console.log('value:', value);
     
+    this.tableManager.updateSelectedLineText(value); 
   }
 
-  // Manejadores de eventos
-  onToggle(isChecked: boolean): void {
-    this.isHexToMIPS = isChecked;
-    this.inputManagerIsHexToMips.setValue(isChecked);
-    let draft = this.inputManager.value;
-    this.inputManager.setValue(this.output);
-    this.output = draft;
-
+  //Maneja la selección de una instrucción de la pila para mostrar su tabla de opcodes
+  onInstructionClick(instruction: string): void {
+    console.log('Instrucción seleccionada hjbdbchkzhd:', instruction);
+    this.selectedInstruction = instruction;
+    this.inputText = instruction;
+    this.detectFormatAndToggle();
+    this.onTableValueChange(instruction);
+  }
+  
+  // Detecta automáticamente si el input es HEX o MIPS
+  private detectFormatAndToggle(): void {
+    this.isHexToMIPS = this.isHex(this.inputText);
+    this.inputManagerIsHexToMips.setValue(this.isHexToMIPS);
   }
 
   onInput(input: string): void {
     this.inputText = input;
-    
+    this.detectFormatAndToggle();
   }
+
   onTextFile(textFile: Promise<string[]>): void {
-    
     textFile.then((instructions) => {
-      
-      if (this.isHexToMIPS) {
-        
-        this.inputManager.setValue(instructions[0]) ;
-        this.output = instructions[1];
-      } else {
-        this.output = instructions[0];
-        this.inputManager.setValue(instructions[1]) ;
-      }
-      
+      this.inputText = instructions[0];
+      this.output = instructions[1] ?? '';
+      this.inputManager.setValue(this.inputText);
+      this.detectFormatAndToggle();
     });
   }
+
   onTranslate(): void {
+    this.detectFormatAndToggle();
+  
+    let translatedInstruction = '';
     if (this.isHexToMIPS) {
-      
-      this.output = this.translator.translateHextoMIPS(this.inputText);
-      this.parameter = this.inputText;
+      console.log("Detectado como HEX → Convertir a MIPS");
+      translatedInstruction = this.translator.translateHextoMIPS(this.inputText);
     } else {
-      this.output = this.translator.translateMIPStoHex(this.inputText);
-      this.parameter = this.output
+      console.log("Detectado como MIPS → Convertir a HEX");
+      translatedInstruction = this.translator.translateMIPStoHex(this.inputText);
+    }
+  
+    //validar si el formato de la instruccion en valido
+    if (translatedInstruction.includes("Unknown")) {
+      console.log("El formato de la instruccion es invalido");
+    } else { //Agregar a la pila
+    let instruction = this.inputText.trim();
+    this.controlStack.push({ original: instruction, translated: translatedInstruction, type: this.isHexToMIPS ? 'HEX' : 'MIPS' });
     }
   }
-  
- 
-  
+
+  //Verifica si el input es HEX
+  private isHex(input: string): boolean {
+    return /^0x[0-9A-Fa-f]+$/.test(input) || /^[0-9A-Fa-f]{8}$/.test(input);
+  }
 }
+
